@@ -2,6 +2,7 @@ package com.evanlennick.retry4j.annotation;
 
 import com.evanlennick.retry4j.CallExecutor;
 import com.evanlennick.retry4j.CallResults;
+import com.evanlennick.retry4j.exception.RetriesExhaustedException;
 import org.testng.annotations.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -20,7 +21,7 @@ public class RetryMethodTest {
         throw new RuntimeException("test");
     }
 
-    @Test
+    @Test(expectedExceptions = RetriesExhaustedException.class)
     public void testAnnotation() throws ClassNotFoundException, NoSuchMethodException {
         Class c = Class.forName("com.evanlennick.retry4j.annotation.RetryMethodTest");
         System.out.println("c = " + c);
