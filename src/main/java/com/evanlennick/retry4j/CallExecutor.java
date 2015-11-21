@@ -1,14 +1,21 @@
 package com.evanlennick.retry4j;
 
+import com.evanlennick.retry4j.annotation.RetryMethod;
+import com.evanlennick.retry4j.backoff.FixedBackoffStrategy;
+import com.evanlennick.retry4j.exception.InvalidRetryMethod;
 import com.evanlennick.retry4j.exception.RetriesExhaustedException;
 import com.evanlennick.retry4j.exception.UnexpectedException;
 import com.evanlennick.retry4j.listener.AfterFailedTryListener;
 import com.evanlennick.retry4j.listener.BeforeNextTryListener;
 import com.evanlennick.retry4j.listener.RetryListener;
 
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
@@ -28,6 +35,40 @@ public class CallExecutor {
 
     public CallExecutor(RetryConfig config) {
         this.config = config;
+    }
+
+    public CallResults execute(Class clazz, Method method) {
+        return execute(clazz, method, new Object[0]);
+    }
+
+    public CallResults execute(Class clazz, Method method, Object... params) {
+        RetryMethod[] annotations = method.getAnnotationsByType(RetryMethod.class);
+        if (annotations.length != 1) {
+            throw new InvalidRetryMethod("You must specify the @RetryMethod annotation on the invoked method!");
+        }
+
+        RetryMethod retryMethod = annotations[0];
+        RetryConfig config = parseAndGetConfigFromRetryMethodAnnotation(retryMethod);
+        this.config = config;
+
+        Callable callable = () -> method.invoke(clazz.newInstance(), params);
+        return execute(callable);
+    }
+
+    private RetryConfig parseAndGetConfigFromRetryMethodAnnotation(RetryMethod retryMethod) {
+        RetryConfig thisConfig = new RetryConfig();
+
+        Duration duration = Duration.of(retryMethod.delay(), retryMethod.timeUnit());
+        thisConfig.setDelayBetweenRetries(duration);
+        thisConfig.setMaxNumberOfTries(retryMethod.maxNumberOfTries());
+
+        Set<Class<? extends Exception>> retryOnExceptions = new HashSet<>();
+        Collections.addAll(retryOnExceptions, retryMethod.retryOnExceptions());
+        thisConfig.setRetryOnSpecificExceptions(retryOnExceptions);
+
+        thisConfig.setBackoffStrategy(new FixedBackoffStrategy()); //TODO make this work
+
+        return thisConfig;
     }
 
     public CallResults execute(Callable<?> callable) throws RetriesExhaustedException, UnexpectedException {
@@ -77,13 +118,13 @@ public class CallExecutor {
     private void handleRetry(long millisBetweenTries, int tries) {
         refreshRetryResults(false, tries);
 
-        if(null != afterFailedTryListener) {
+        if (null != afterFailedTryListener) {
             afterFailedTryListener.immediatelyAfterFailedTry(results);
         }
 
         sleep(millisBetweenTries, tries);
 
-        if(null != beforeNextTryListener) {
+        if (null != beforeNextTryListener) {
             beforeNextTryListener.immediatelyBeforeNextTry(results);
         }
     }
@@ -122,10 +163,10 @@ public class CallExecutor {
     }
 
     public void registerRetryListener(RetryListener listener) {
-        if(listener instanceof AfterFailedTryListener) {
-            this.afterFailedTryListener = (AfterFailedTryListener)listener;
-        } else if(listener instanceof BeforeNextTryListener) {
-            this.beforeNextTryListener = (BeforeNextTryListener)listener;
+        if (listener instanceof AfterFailedTryListener) {
+            this.afterFailedTryListener = (AfterFailedTryListener) listener;
+        } else if (listener instanceof BeforeNextTryListener) {
+            this.beforeNextTryListener = (BeforeNextTryListener) listener;
         } else {
             throw new IllegalArgumentException("Tried to register an unrecognized RetryListener!");
         }
